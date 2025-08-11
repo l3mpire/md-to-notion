@@ -14,9 +14,13 @@ export class SyncStateManager {
   private state: SyncState
   private pendingChanges: Set<string> = new Set()
 
-  constructor(statePath: string) {
+  constructor(statePath: string, forceUpdate = false) {
     this.statePath = statePath
-    this.state = this.loadState()
+    if (forceUpdate) {
+      this.state = { fileHashes: {} }
+    } else {
+      this.state = this.loadState()
+    }
   }
 
   private loadState(): SyncState {

@@ -60,7 +60,7 @@ async function main(
   const stateFile =
     options.stateFile ||
     path.join(os.homedir(), ".md-to-notion", "sync-state.json")
-  const syncStateManager = new SyncStateManager(stateFile)
+  const syncStateManager = new SyncStateManager(stateFile, options.renew)
 
   const dir = readMarkdownFiles(
     directory,
