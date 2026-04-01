@@ -24,6 +24,7 @@ const DEFAULT_PARALLEL_LIMIT = 25
 const DEFAULT_REQUEST_DELAY = 50
 const MAX_RETRY_ATTEMPTS = 3
 const INITIAL_RETRY_DELAY = 1000
+const INITIAL_CLOUDFLARE_RETRY_DELAY = 5000
 
 export type NotionPageLink = {
   id: string
@@ -84,7 +85,7 @@ async function retryWithBackoff<T>(
       }
 
       const delay = isCloudflareBlock
-        ? initialDelay * Math.pow(3, attempt - 1) // Longer backoff for Cloudflare blocks
+        ? INITIAL_CLOUDFLARE_RETRY_DELAY * Math.pow(3, attempt - 1) // 5s, 15s, 45s, 135s...
         : initialDelay * Math.pow(2, attempt - 1)
       logger(
         LogLevel.INFO,
