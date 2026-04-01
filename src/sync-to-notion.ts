@@ -391,7 +391,9 @@ export async function syncToNotion(
             }),
           maxRetryAttempts,
           INITIAL_RETRY_DELAY,
-          fileName ? `append ${fileName}` : undefined
+          fileName
+            ? `append ${fileName} chunk ${Math.floor(i / NOTION_BLOCK_LIMIT) + 1}/${Math.ceil(blocks.length / NOTION_BLOCK_LIMIT)} (blocks ${i}-${Math.min(i + NOTION_BLOCK_LIMIT, blocks.length) - 1})`
+            : undefined
         )
 
         // Check for children in the chunk and append them separately
@@ -410,7 +412,14 @@ export async function syncToNotion(
           }
         }
       } catch (error) {
-        logger(LogLevel.ERROR, "Error appending blocks", { error, chunk })
+        logger(LogLevel.ERROR, "Error appending blocks", {
+          fileName,
+          chunkIndex: Math.floor(i / NOTION_BLOCK_LIMIT) + 1,
+          totalChunks: Math.ceil(blocks.length / NOTION_BLOCK_LIMIT),
+          blockRange: `${i}-${Math.min(i + NOTION_BLOCK_LIMIT, blocks.length) - 1}`,
+          error,
+          chunk,
+        })
         throw error
       }
     }
