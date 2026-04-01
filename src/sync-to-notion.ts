@@ -61,21 +61,34 @@ async function retryWithBackoff<T>(
     } catch (error) {
       lastError = error as Error
 
-      // Check if it's a rate limit error
+      // Check if it's a retryable error (rate limit or Cloudflare block)
       const isRateLimit =
         error &&
         typeof error === "object" &&
         "status" in error &&
         (error.status === 429 || error.status === 503)
 
-      if (attempt === maxAttempts || !isRateLimit) {
+      const isCloudflareBlock =
+        error &&
+        typeof error === "object" &&
+        "status" in error &&
+        error.status === 403 &&
+        "body" in error &&
+        typeof error.body === "string" &&
+        error.body.includes("Cloudflare")
+
+      const isRetryable = isRateLimit || isCloudflareBlock
+
+      if (attempt === maxAttempts || !isRetryable) {
         throw error
       }
 
-      const delay = initialDelay * Math.pow(2, attempt - 1)
+      const delay = isCloudflareBlock
+        ? initialDelay * Math.pow(3, attempt - 1) // Longer backoff for Cloudflare blocks
+        : initialDelay * Math.pow(2, attempt - 1)
       logger(
         LogLevel.INFO,
-        `Rate limited, retrying in ${delay}ms (attempt ${attempt}/${maxAttempts})`
+        `${isCloudflareBlock ? "Cloudflare block" : "Rate limited"}, retrying in ${delay}ms (attempt ${attempt}/${maxAttempts})`
       )
       await sleep(delay)
     }

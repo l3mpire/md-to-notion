@@ -78,7 +78,20 @@ async function main(
   }
 
   if (dir) {
-    const notion = new Client({ auth: options.token })
+    const notion = new Client({
+      auth: options.token,
+      fetch: ((url: string, init?: Record<string, unknown>) => {
+        const headers = (init?.["headers"] || {}) as Record<string, string>
+        return fetch(url, {
+          ...init,
+          headers: {
+            ...headers,
+            "User-Agent":
+              "Mozilla/5.0 (compatible; md-to-notion/1.1.0; +https://lemlist.com)",
+          },
+        } as RequestInit)
+      }) as unknown as typeof fetch,
+    })
 
     // Configure performance options
     const collectionOptions: CollectionOptions = {
