@@ -52,7 +52,8 @@ function sleep(ms: number): Promise<void> {
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   maxAttempts: number = MAX_RETRY_ATTEMPTS,
-  initialDelay: number = INITIAL_RETRY_DELAY
+  initialDelay: number = INITIAL_RETRY_DELAY,
+  context?: string
 ): Promise<T> {
   let lastError: Error | undefined
 
@@ -87,9 +88,10 @@ async function retryWithBackoff<T>(
       const delay = isCloudflareBlock
         ? INITIAL_CLOUDFLARE_RETRY_DELAY * Math.pow(3, attempt - 1) // 5s, 15s, 45s, 135s...
         : initialDelay * Math.pow(2, attempt - 1)
+      const ctxStr = context ? ` [${context}]` : ""
       logger(
         LogLevel.INFO,
-        `${isCloudflareBlock ? "Cloudflare block" : "Rate limited"}, retrying in ${delay}ms (attempt ${attempt}/${maxAttempts})`
+        `${isCloudflareBlock ? "Cloudflare block" : "Rate limited"}${ctxStr}, retrying in ${delay}ms (attempt ${attempt}/${maxAttempts})`
       )
       await sleep(delay)
     }
@@ -230,11 +232,15 @@ export async function collectCurrentFiles(
       const [pageResponse, childrenResponse] = await Promise.all([
         retryWithBackoff(
           () => notion.pages.retrieve({ page_id: pageId }),
-          maxRetryAttempts
+          maxRetryAttempts,
+          INITIAL_RETRY_DELAY,
+          `collect ${parentTitle}/${pageId}`
         ),
         retryWithBackoff(
           () => notion.blocks.children.list({ block_id: pageId }),
-          maxRetryAttempts
+          maxRetryAttempts,
+          INITIAL_RETRY_DELAY,
+          `collect children ${parentTitle}/${pageId}`
         ),
       ])
 
@@ -358,7 +364,8 @@ export async function syncToNotion(
     pageId: string,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     blocks: any[],
-    afterId: string | null = null
+    afterId: string | null = null,
+    fileName?: string
   ): Promise<void> {
     const limitChild = findMaxDepth({ children: blocks }, 0) > 3
     // Append blocks in chunks of NOTION_BLOCK_LIMIT
@@ -382,7 +389,9 @@ export async function syncToNotion(
               children: chunk,
               after: afterId ? afterId : undefined,
             }),
-          maxRetryAttempts
+          maxRetryAttempts,
+          INITIAL_RETRY_DELAY,
+          fileName ? `append ${fileName}` : undefined
         )
 
         // Check for children in the chunk and append them separately
@@ -394,7 +403,9 @@ export async function syncToNotion(
               response.results[index].id,
               // eslint-disable-next-line @typescript-eslint/ban-ts-comment
               // @ts-ignore
-              children[index]
+              children[index],
+              null,
+              fileName
             )
           }
         }
@@ -427,7 +438,9 @@ export async function syncToNotion(
               title: [{ text: { content: folderName } }],
             },
           }),
-        maxRetryAttempts
+        maxRetryAttempts,
+        INITIAL_RETRY_DELAY,
+        `create page ${folderName}`
       )
       linkMap.set(key, newNotionPageLink(response as PageObjectResponse))
       return response.id
@@ -592,7 +605,7 @@ export async function syncToNotion(
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async function updateBlocks(pageId: string, newBlocks: any[]) {
+  async function updateBlocks(pageId: string, newBlocks: any[], fileName?: string) {
     const blockIdSetToDelete = new Set<string>()
     const existingBlocks = await getExistingBlocks(notion, pageId, 10, 0)
     await mergeBlocks(
@@ -624,7 +637,7 @@ export async function syncToNotion(
           blockIdSetToDelete.add(afterId)
         }
         logger(LogLevel.INFO, "Appending blocks", { appendBlocks, after })
-        await appendBlocksInChunks(pageId, appendBlocks, afterId)
+        await appendBlocksInChunks(pageId, appendBlocks, afterId, fileName)
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async (block: any) => {
@@ -635,7 +648,9 @@ export async function syncToNotion(
       logger(LogLevel.INFO, "Deleting a block", { blockId })
       await retryWithBackoff(
         () => notion.blocks.delete({ block_id: blockId }),
-        maxRetryAttempts
+        maxRetryAttempts,
+        INITIAL_RETRY_DELAY,
+        fileName ? `delete block in ${fileName}` : undefined
       )
     }
   }
@@ -673,7 +688,7 @@ export async function syncToNotion(
       newBlockSize: blocks.length,
       progress: `${i + 1}/${pages.length}`,
     })
-    await updateBlocks(page.pageId, blocks)
+    await updateBlocks(page.pageId, blocks, page.file.fileName)
 
     // Save state after each file is successfully synced
     if (syncStateManager) {
